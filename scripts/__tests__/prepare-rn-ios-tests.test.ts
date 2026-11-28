@@ -29,6 +29,7 @@ const BOARD_RENDERER_PROJECT_PATH = 'BoardseshTests/BoardRendererSources/BoardRe
 
 const MODULE_SOURCE_NAMES = [
   'BoardBleManager.swift',
+  'BoardBleEvidence.swift',
   'BoardBleWriteSeams.swift',
   'WaiterPool.swift',
   'ClimbSessionAttributes.swift',

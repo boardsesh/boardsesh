@@ -8,8 +8,10 @@ const trackMock = vi.hoisted(() => vi.fn());
 const permissionMock = vi.hoisted(() => vi.fn());
 const poweredOnMock = vi.hoisted(() => vi.fn());
 
+vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+
 vi.mock('../ble-manager', () => ({ getBleManager: () => mockBleManager }));
-vi.mock('../../analytics', () => ({ track: trackMock }));
+vi.mock('../../analytics', () => ({ track: trackMock, capture: trackMock }));
 vi.mock('../availability', () => ({ waitForBlePoweredOn: poweredOnMock }));
 vi.mock('../use-ble-permissions', () => ({ requestBleRuntimePermissions: permissionMock }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: { BleAdvertisementRecon: 'BLE Advertisement Recon' } }));
@@ -130,5 +132,34 @@ describe('runBleAdvertisementRecon', () => {
       'BLE Advertisement Recon',
       expect.objectContaining({ family: 'moonboard', deviceName: 'MoonBoard A' }),
     );
+  });
+  it('retains data arriving before the board name and emits no extra events', async () => {
+    const promise = runBleAdvertisementRecon('data-first');
+    await flushMicrotasks();
+    const emit = scanCallback();
+    emit(null, {
+      id: 'm1',
+      manufacturerData: 'AQID',
+      serviceData: { '0000fff0-0000-1000-8000-00805f9b34fb': 'AAE=' },
+      rssi: -60,
+    });
+    emit(null, { id: 'm1', localName: 'MoonBoard A', rssi: -60 });
+    emit(null, { id: 'm2', localName: 'MoonBoard A', rssi: -60 });
+    vi.advanceTimersByTime(8_000);
+    expect(await promise).toBe(2);
+    expect(trackMock).toHaveBeenCalledTimes(2);
+    expect(trackMock).toHaveBeenCalledWith(
+      'BLE Advertisement Recon',
+      expect.objectContaining({
+        deviceName: 'MoonBoard A',
+        bleManufacturerData: '010203',
+        bleServiceData: JSON.stringify({ '0000fff0-0000-1000-8000-00805f9b34fb': '0001' }),
+        bleEvidenceVersion: 1,
+      }),
+    );
+    expect(mockBleManager.startDeviceScan.mock.calls[0][1]).toEqual({ allowDuplicates: true });
+    for (const [, properties] of trackMock.mock.calls) {
+      expect(JSON.parse(properties.bleEvidence)).not.toHaveProperty('selectedDeviceId');
+    }
   });
 });

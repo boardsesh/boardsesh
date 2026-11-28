@@ -20,6 +20,7 @@ import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from './scan-options';
+import { BleEvidenceCollector, blePlxEvidencePacket, type BleConnectionEvidence } from './controller-evidence';
 import { upsertDiscoveredDevice } from './scan-device-cache';
 import { setBackgroundSafeTimeout } from './background-safe-timeout';
 import type {
@@ -145,6 +146,19 @@ async function findWriteCharacteristic(
 
 export class RNBleAdapter implements BluetoothAdapter {
   private connectedDevice: Device | null = null;
+  private controllerEvidence?: BleConnectionEvidence;
+  private evidenceCollector?: BleEvidenceCollector;
+  getControllerEvidence(): BleConnectionEvidence | undefined {
+    if (!this.controllerEvidence || !this.evidenceCollector) return this.controllerEvidence;
+    return {
+      ...this.controllerEvidence,
+      scan: this.evidenceCollector.snapshot(
+        this.controllerEvidence.selectedDeviceId,
+        this.controllerEvidence.scan.complete,
+      ),
+    };
+  }
+
   private writeCharacteristic: Characteristic | null = null;
   private disconnectCallback: ((info?: BleDisconnectInfo) => void) | null = null;
   private disconnectSubscription: { remove: () => void } | null = null;
@@ -303,6 +317,9 @@ export class RNBleAdapter implements BluetoothAdapter {
     // negotiation can't write with the previous connection's stale MTU, and
     // whose reconnect fails before the GATT connect (scan error, board not
     // found) reports 0 attempts rather than the previous connect's numbers.
+    const evidenceCollector = new BleEvidenceCollector('connection_picker', Platform.OS);
+    this.evidenceCollector = evidenceCollector;
+    this.controllerEvidence = { scan: evidenceCollector.snapshot() };
     this.negotiatedMtu = DEFAULT_ATT_MTU;
     this.lastConnectAttemptCount = 0;
     this.lastConnectRetrySucceeded = false;
@@ -394,6 +411,7 @@ export class RNBleAdapter implements BluetoothAdapter {
 
         if (!scannedDevice) return;
 
+        const evidence = evidenceCollector.observe(blePlxEvidencePacket(scannedDevice));
         const deviceName = scannedDevice.localName ?? scannedDevice.name ?? undefined;
         // Overflow UUIDs cover iOS peripherals whose advertisement is too full
         // to carry the service list in the main packet.
@@ -409,6 +427,7 @@ export class RNBleAdapter implements BluetoothAdapter {
 
         const device: DiscoveredDevice = {
           deviceId: scannedDevice.id,
+          evidence,
           name: deviceName,
           rssi: scannedDevice.rssi ?? -100,
           // ble-plx surfaces these as base64; normalize to hex so the recon
@@ -463,7 +482,16 @@ export class RNBleAdapter implements BluetoothAdapter {
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;
+      evidenceCollector.select(
+        selectedDeviceId,
+        [...devices.values()].find((device) => device.deviceId === selectedDeviceId)?.evidence,
+      );
+      this.controllerEvidence = { scan: evidenceCollector.snapshot(selectedDeviceId, true), selectedDeviceId };
     } finally {
+      this.controllerEvidence = {
+        ...this.controllerEvidence,
+        scan: evidenceCollector.snapshot(this.controllerEvidence?.selectedDeviceId, true),
+      };
       // A late advert after a cancel or a pick must not auto-select.
       autoSelecting = false;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
@@ -516,6 +544,20 @@ export class RNBleAdapter implements BluetoothAdapter {
       }
 
       const discoveredDevice = await connected.discoverAllServicesAndCharacteristics();
+      // services() reads the already-discovered cache; telemetry cannot make a
+      // usable connection fail when an older adapter does not expose it.
+      try {
+        const services =
+          typeof discoveredDevice.services === 'function' ? await discoveredDevice.services() : undefined;
+        this.controllerEvidence = {
+          ...this.controllerEvidence!,
+          discoveredServices: services?.map((service) => service.uuid),
+          discoveryMode: 'full',
+          discoveryOutcome: 'complete',
+        };
+      } catch {
+        /* diagnostic cache unavailable */
+      }
 
       // Newer controllers expose the write characteristic on the Nordic UART
       // service. The original MoonBoard (RedBearLab) LED box uses a different
@@ -539,7 +581,13 @@ export class RNBleAdapter implements BluetoothAdapter {
 
       deviceWithServices = discoveredDevice;
       writeCharacteristic = discoveredWriteCharacteristic;
+      this.controllerEvidence = {
+        ...this.controllerEvidence!,
+        writeServiceUuid: discoveredWriteCharacteristic.serviceUUID,
+        writeCharacteristicUuid: discoveredWriteCharacteristic.uuid,
+      };
     } catch (error) {
+      this.controllerEvidence = { ...this.controllerEvidence!, discoveryOutcome: 'failed' };
       // A failed cancellation must not replace the original setup error.
       await getBleManager()
         .cancelDeviceConnection(selectedDeviceId)
@@ -561,6 +609,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     return {
       deviceId: selectedDeviceId,
       deviceName: selectedDeviceName,
+      evidence: this.controllerEvidence,
       manufacturerData: selectedManufacturerData,
       serviceData: selectedServiceData,
       retrySucceeded,

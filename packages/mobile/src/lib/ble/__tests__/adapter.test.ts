@@ -780,6 +780,66 @@ describe('RNBleAdapter', () => {
   });
 
   describe('requestAndConnect — scan filtering', () => {
+    it.each([false, true])(
+      'retains an evicted selected Android advertisement after timeout, failure=%s',
+      async (fails) => {
+        vi.useFakeTimers();
+        try {
+          mockRuntime.platformOs = 'android';
+          mockBleManager.state.mockResolvedValue(State.PoweredOn);
+          setupConnectableAdapter(
+            'moonboard',
+            'board-0',
+            vi.fn().mockResolvedValue([{ uuid: 'uart-write-uuid', writeWithoutResponse: vi.fn() }]),
+          );
+          mockBleManager.startDeviceScan.mockImplementation(
+            (_uuids: unknown, _options: unknown, callback: (error: unknown, device: unknown) => void) => {
+              for (let index = 0; index < 31; index += 1)
+                callback(null, {
+                  id: `board-${index}`,
+                  localName: 'MoonBoard',
+                  name: 'MoonBoard',
+                  rssi: -40,
+                  manufacturerData: index === 0 ? 'AAAB' : undefined,
+                  rawScanRecord: index === 0 ? 'AAIDBA==' : undefined,
+                });
+            },
+          );
+          if (fails) mockBleManager.connectToDevice.mockRejectedValueOnce(new Error('selected connect failed'));
+          let selectDevice!: (deviceId: string) => void;
+          const adapter = new RNBleAdapter(
+            () =>
+              new Promise<string>((resolve) => {
+                selectDevice = resolve;
+              }),
+            'moonboard',
+            { enableAndroidConnectRetry: true },
+          );
+          const connecting = adapter.requestAndConnect();
+          const settled = connecting.then(
+            () => 'connected',
+            () => 'failed',
+          );
+          await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+          expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+          selectDevice('board-0');
+          expect(await settled).toBe(fails ? 'failed' : 'connected');
+          const evidence = adapter.getControllerEvidence();
+          expect(evidence?.selectedDeviceId).toBe('board-0');
+          expect(evidence?.scan.devices[0]).toMatchObject({
+            deviceId: 'board-0',
+            manufacturerData: '000001',
+            rawScanRecords: ['00020304'],
+            handleKind: 'android_address',
+          });
+          expect(evidence?.scan.devices).toHaveLength(30);
+          if (!fails) expect((await connecting).evidence).toEqual(evidence);
+        } finally {
+          vi.useRealTimers();
+        }
+      },
+    );
+
     it('scans unfiltered and filters results in JS so MoonBoards surface', async () => {
       mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
       mockBleManager.startDeviceScan.mockImplementation(

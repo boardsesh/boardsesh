@@ -3,6 +3,9 @@ import { requireOptionalNativeModule, type EventSubscription } from 'expo-module
 // --- BoardBle native module ---
 
 export type NativeBleScanEvent = {
+  /** Evidence scan identity and true peripheral cache name on newer binaries. */
+  scanId?: string;
+  cachedName?: string;
   device: { deviceId: string; name: string };
   localName: string;
   rssi: number;
@@ -45,7 +48,46 @@ export type NativeBleConnectedEvent = {
   deviceName?: string;
 };
 
+export type NativeBleControllerEvidence = {
+  manufacturerDataOriginalBytes?: number;
+  serviceDataOriginalBytes?: Record<string, number>;
+  discoveredServicesOriginalCount?: number;
+  version?: number;
+  deviceId: string;
+  localName?: string;
+  cachedName?: string;
+  serviceUuids?: string[];
+  manufacturerData?: string;
+  serviceData?: Record<string, string>;
+  observedAt?: string;
+  advertisementStatus: 'observed' | 'cached' | 'not_observed';
+  truncated?: boolean;
+  connectionGeneration?: number;
+  discoveredServices?: string[];
+  discoveryMode?: 'targeted' | 'full';
+  discoveryOutcome?: 'pending' | 'complete' | 'failed';
+  writeServiceUuid?: string;
+  writeCharacteristicUuid?: string;
+};
+
+/** Immutable success evidence returned by newer token-bound native connects. */
+export type NativeBlePreparedConnectResult = {
+  deviceId: string;
+  preparationToken: string;
+  connectionGeneration: number;
+  controllerEvidence: NativeBleControllerEvidence;
+};
+
+export type NativeBleScanEvidence = {
+  version: 1;
+  scanId: string;
+  devices: NativeBleControllerEvidence[];
+  complete: boolean;
+  droppedCount: number;
+};
+
 export type NativeBleConnectedDevice = {
+  controllerEvidence?: NativeBleControllerEvidence;
   deviceId: string;
   name?: string;
   /** The configuration successfully paired with this exact peripheral (#7122). */
@@ -122,6 +164,7 @@ export type NativeBleWriteDiagnostics = {
  * unknown third controller generation (unfamiliar service UUIDs).
  */
 export type NativeBleConnectDiagnostics = {
+  controllerEvidence?: NativeBleControllerEvidence;
   /** Service UUIDs actually discovered on the peripheral before it failed. */
   discoveredServices: string[];
 };
@@ -204,7 +247,7 @@ type BoardBleNativeModule = {
    */
   prepareBoardConnection?(options: NativeBlePrepareBoardConnectionOptions): Promise<string>;
   /** Connect only for the attempt returned by prepareBoardConnection (#7122). */
-  connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<void>;
+  connectPreparedBoard?(deviceId: string, preparationToken: string): Promise<NativeBlePreparedConnectResult | void>;
   disconnect(): Promise<void>;
   /**
    * Disconnect Bluetooth when driving ends (2.7): free the board but keep the
@@ -229,6 +272,13 @@ type BoardBleNativeModule = {
    * (an OTA JS update can run against an older binary).
    */
   getConnectedDevice?(): Promise<NativeBleConnectedDevice | null>;
+  /** Additive diagnostic APIs; never assumed present on an older native binary. */
+  startScanWithEvidence?(serviceUuids: string[], scanId: string): Promise<void>;
+  getScanEvidence?(scanId: string, selectedDeviceId: string): Promise<NativeBleScanEvidence | null>;
+  getLastConnectDiagnosticsForDevice?(
+    deviceId: string,
+    preparationToken: string,
+  ): Promise<NativeBleConnectDiagnostics | null>;
   /**
    * Diagnostics of the most recent failed JS write, for tagging the failure
    * analytics event (a rejected promise can't carry them). Only present on

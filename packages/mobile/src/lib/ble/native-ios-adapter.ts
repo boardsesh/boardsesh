@@ -7,6 +7,7 @@ import {
 import {
   boardBleNative,
   type NativeBleConfigureBoardOptions,
+  type NativeBlePreparedConnectResult,
   type NativeBlePrepareBoardConnectionOptions,
   type NativeBleDisconnectEvent,
   type NativeBleScanEvent,
@@ -26,6 +27,12 @@ import type {
 } from './types';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { isLikelyBoardDevice } from './board-device-filter';
+import {
+  BleEvidenceCollector,
+  nativeScanEvidence,
+  nativeControllerEvidence,
+  type BleConnectionEvidence,
+} from './controller-evidence';
 import { upsertDiscoveredDevice } from './scan-device-cache';
 import {
   allowsBluetoothUse,
@@ -104,6 +111,10 @@ function nativeDisconnectInfo(payload: NativeBleDisconnectEvent): BleDisconnectI
 // has the board metadata it needs to encode without going through JS.
 export class NativeIosBleAdapter implements BluetoothAdapter {
   private connectedDeviceId: string | null = null;
+  private controllerEvidence?: BleConnectionEvidence;
+  getControllerEvidence(): BleConnectionEvidence | undefined {
+    return this.controllerEvidence;
+  }
   private preparationToken: string | null = null;
   private preparationGeneration = 0;
   private preparationState: 'none' | 'pending' | 'ready' | 'failed' = 'none';
@@ -205,6 +216,10 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   // scan stopped so it drops its spinner.
   async requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection> {
     const native = this.requireNative();
+    const evidenceCollector = new BleEvidenceCollector('native_ios_picker', 'ios');
+    this.controllerEvidence = { scan: evidenceCollector.snapshot() };
+    this.controllerEvidence.scan.capability =
+      typeof native.startScanWithEvidence === 'function' ? 'supported' : 'unsupported';
     const preparationToken = this.preparationToken;
     const preparationGeneration = this.preparationGeneration;
     const usesPreparedConnection = nativeBleSupportsPreparedConnections();
@@ -261,6 +276,15 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     const supportsUnfilteredScan = nativeBleSupportsConnectionAdoption();
 
     const scanSubscription = native.addListener('scanResult', (payload: NativeBleScanEvent) => {
+      if (typeof native.startScanWithEvidence === 'function' && payload.scanId !== evidenceCollector.scanId) return;
+      const evidence = evidenceCollector.observe({
+        deviceId: payload.device.deviceId,
+        localName: typeof native.startScanWithEvidence === 'function' ? payload.localName || undefined : undefined,
+        cachedName: typeof native.startScanWithEvidence === 'function' ? payload.cachedName : payload.device.name,
+        serviceUuids: payload.serviceUuids,
+        manufacturerData: payload.manufacturerData,
+        serviceData: payload.serviceData,
+      });
       const deviceName = payload.localName || payload.device.name || undefined;
       if (
         !isLikelyBoardDevice({
@@ -273,6 +297,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       }
       const device: DiscoveredDevice = {
         deviceId: payload.device.deviceId,
+        evidence,
         name: deviceName,
         rssi: payload.rssi,
         // Native already hex-encodes; pass through as-is (omitted when absent).
@@ -316,7 +341,11 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
               // advertise Nordic UART, the original RedBearLab box its own
               // service. Filter on both when an unfiltered scan isn't available.
               [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
-      await native.startScan(scanServiceUuids);
+      if (typeof native.startScanWithEvidence === 'function') {
+        await native.startScanWithEvidence(scanServiceUuids, evidenceCollector.scanId);
+      } else {
+        await native.startScan(scanServiceUuids);
+      }
 
       // Grace window: if the saved board hasn't matched by now, stop auto-selecting
       // and let the picker show the list. The scan keeps running, so the list
@@ -337,6 +366,11 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       }, SCAN_TIMEOUT_MS);
 
       selectedDeviceId = await selectionPromise;
+      evidenceCollector.select(
+        selectedDeviceId,
+        [...devices.values()].find((device) => device.deviceId === selectedDeviceId)?.evidence,
+      );
+      this.controllerEvidence = { ...this.controllerEvidence, selectedDeviceId };
     } finally {
       // A late advert after a cancel or a pick must not auto-select.
       autoSelecting = false;
@@ -347,6 +381,47 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       // mid-flow) would mask the original error — turning a user-cancel into a
       // spurious failure alert, or hiding the real scan/connect error.
       await native.stopScan().catch(() => {});
+      const selectedId = this.controllerEvidence?.selectedDeviceId;
+      const batch =
+        typeof native.getScanEvidence === 'function'
+          ? await native.getScanEvidence(evidenceCollector.scanId, selectedId ?? '').catch(() => null)
+          : null;
+      let finalScan = batch
+        ? nativeScanEvidence(batch, selectedId)
+        : {
+            ...evidenceCollector.snapshot(selectedId, true),
+            capability:
+              typeof native.startScanWithEvidence === 'function' ? ('supported' as const) : ('unsupported' as const),
+          };
+      if (selectedId && !finalScan.devices.some((device) => device.deviceId === selectedId)) {
+        // Native evidence keeps its first 30 eligible records, while the UI can
+        // list more. Reserve space for the exact physical controller selected.
+        // Fall back to the picker cache if later traffic evicted its JS record.
+        const pickerDevice = [...devices.values()].find((device) => device.deviceId === selectedId);
+        let selectedObservation = evidenceCollector
+          .snapshot(selectedId, true)
+          .devices.find((device) => device.deviceId === selectedId);
+        if (!selectedObservation && pickerDevice) {
+          selectedObservation = evidenceCollector.observe({
+            deviceId: selectedId,
+            cachedName: pickerDevice.name,
+            manufacturerData: pickerDevice.manufacturerData,
+            serviceData: pickerDevice.serviceData,
+          });
+        }
+        if (selectedObservation) {
+          const selectedFirst = [selectedObservation, ...finalScan.devices];
+          finalScan = {
+            ...finalScan,
+            devices: selectedFirst.slice(0, 30),
+            droppedCount: finalScan.droppedCount + Math.max(0, selectedFirst.length - 30),
+          };
+        }
+      }
+      this.controllerEvidence = {
+        ...this.controllerEvidence,
+        scan: finalScan,
+      };
     }
 
     let selectedDeviceName: string | undefined;
@@ -368,24 +443,49 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       if (preparationGeneration !== this.preparationGeneration) {
         throw new Error('Board connection preparation superseded');
       }
+      let preparedConnectResult: NativeBlePreparedConnectResult | void = undefined;
       if (usesPreparedConnection) {
         if (!preparationToken || typeof native.connectPreparedBoard !== 'function') {
           throw new Error('Board connection is not prepared');
         }
-        await native.connectPreparedBoard(selectedDeviceId, preparationToken);
+        preparedConnectResult = await native.connectPreparedBoard(selectedDeviceId, preparationToken);
       } else {
         await native.connect(selectedDeviceId);
       }
       if (preparationGeneration !== this.preparationGeneration) {
         throw new Error('Board connection preparation superseded');
       }
+      if (
+        preparedConnectResult &&
+        preparedConnectResult.deviceId === selectedDeviceId &&
+        preparedConnectResult.preparationToken === preparationToken &&
+        preparedConnectResult.controllerEvidence?.deviceId === selectedDeviceId &&
+        Number.isSafeInteger(preparedConnectResult.connectionGeneration) &&
+        preparedConnectResult.connectionGeneration > 0 &&
+        preparedConnectResult.controllerEvidence.connectionGeneration === preparedConnectResult.connectionGeneration
+      ) {
+        this.controllerEvidence = {
+          ...nativeControllerEvidence(selectedDeviceId, preparedConnectResult.controllerEvidence, 'native_ios_picker'),
+          scan: this.controllerEvidence!.scan,
+        };
+      }
     } catch (error) {
       // A rejected connect can't carry structured data (Expo), so on failure
       // fetch the services the board actually exposed from the module stash for
       // the service_missing report (#3480). Absent on older binaries (OTA JS can
       // outrun the native build) — then there's simply nothing to fetch.
-      if (typeof native.getLastConnectDiagnostics === 'function') {
-        this.lastConnectDiagnostics = await native.getLastConnectDiagnostics().catch(() => null);
+      const diagnostics =
+        preparationToken && typeof native.getLastConnectDiagnosticsForDevice === 'function'
+          ? await native.getLastConnectDiagnosticsForDevice(selectedDeviceId, preparationToken).catch(() => null)
+          : typeof native.getLastConnectDiagnostics === 'function'
+            ? await native.getLastConnectDiagnostics().catch(() => null)
+            : null;
+      this.lastConnectDiagnostics = diagnostics;
+      if (diagnostics?.controllerEvidence) {
+        this.controllerEvidence = {
+          ...nativeControllerEvidence(selectedDeviceId, diagnostics.controllerEvidence),
+          scan: this.controllerEvidence!.scan,
+        };
       }
       throw error;
     }
@@ -395,6 +495,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     return {
       deviceId: selectedDeviceId,
       deviceName: selectedDeviceName,
+      evidence: this.controllerEvidence,
       manufacturerData: selectedManufacturerData,
       serviceData: selectedServiceData,
     };

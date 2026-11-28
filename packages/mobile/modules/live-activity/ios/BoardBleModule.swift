@@ -69,10 +69,12 @@ public class BoardBleModule: Module {
                             "deviceId": result.deviceId,
                             "name": result.name ?? ""
                         ],
-                        "localName": result.name ?? "",
+                        "localName": result.localName ?? "",
                         "rssi": result.rssi,
                         "serviceUuids": result.serviceUuids
                     ]
+                    if let scanId = result.scanId { body["scanId"] = scanId }
+                    if let cachedName = result.cachedName { body["cachedName"] = cachedName }
                     // Recon-only advertisement payload; omitted when absent so
                     // older JS/sanitize sees no empty fields.
                     if let manufacturerData = result.manufacturerData {
@@ -143,6 +145,23 @@ public class BoardBleModule: Module {
             BoardBleManager.shared.requestAuthorization { authorization in
                 promise.resolve(BoardBleManager.authorizationName(authorization))
             }
+        }
+
+        AsyncFunction("startScanWithEvidence") { (services: [String], scanId: String, promise: Promise) in
+            BoardBleManager.shared.startScanWithEvidence(serviceUuids: services, scanId: scanId) { result in
+                switch result {
+                case .success: promise.resolve(nil)
+                case .failure(let error): promise.reject("BLE_SCAN_FAILED", error.localizedDescription)
+                }
+            }
+        }
+
+        AsyncFunction("getScanEvidence") { (scanId: String, selectedDeviceId: String) -> [String: Any]? in
+            BoardBleManager.shared.scanEvidence(scanId: scanId, selectedDeviceId: selectedDeviceId)
+        }
+
+        AsyncFunction("getLastConnectDiagnosticsForDevice") { (deviceId: String, preparationToken: String) -> [String: Any]? in
+            BoardBleManager.shared.takeConnectEvidence(deviceId: deviceId, preparationToken: preparationToken)
         }
 
         AsyncFunction("startScan") { (services: [String]?, promise: Promise) in
@@ -254,7 +273,7 @@ public class BoardBleModule: Module {
             guard let device = BoardBleManager.shared.connectedDeviceInfo else { return nil }
             let diagnostics = device.diagnostics
             let provenance = BoardBleManager.shared.connectRelightProvenance
-            return [
+            var snapshot: [String: Any] = [
                 "deviceId": device.deviceId,
                 "name": device.name ?? "",
                 "configKey": device.configKey,
@@ -269,6 +288,10 @@ public class BoardBleModule: Module {
                 "connectOrigin": provenance.origin ?? "",
                 "implicitRelightSuppressed": provenance.implicitRelightSuppressed
             ]
+            if let evidence = device.controllerEvidence {
+                snapshot["controllerEvidence"] = evidence
+            }
+            return snapshot
         }
 
         AsyncFunction("configureBoard") { (options: ConfigureBoardOptions) -> Void in
@@ -295,7 +318,10 @@ public class BoardBleModule: Module {
         AsyncFunction("connectPreparedBoard") { (deviceId: String, preparationToken: String, promise: Promise) in
             BoardBleManager.shared.connectPreparedBoard(deviceId: deviceId, preparationToken: preparationToken) { result in
                 switch result {
-                case .success: promise.resolve(nil)
+                case .success:
+                    promise.resolve(BoardBleManager.shared.preparedConnectionEvidence(
+                        deviceId: deviceId, preparationToken: preparationToken
+                    ))
                 case .failure(let error): promise.reject("BLE_CONNECT_FAILED", error.localizedDescription)
                 }
             }

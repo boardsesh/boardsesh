@@ -20,12 +20,17 @@ import {
   type WebBluetoothDevice,
   type WebBluetoothRemoteGATTCharacteristic,
 } from '@boardsesh/ble-protocol/web-transport';
+import { BleEvidenceCollector, type BleConnectionEvidence } from './controller-evidence';
 import type { BleAdapterOptions, BleConnection, BluetoothAdapter, BoardScanFamily } from './types';
 
 export { isWebBluetoothAvailable, requestDeviceOptionsForFamily };
 
 export class WebBluetoothAdapter implements BluetoothAdapter {
   private device: WebBluetoothDevice | null = null;
+  private controllerEvidence?: BleConnectionEvidence;
+  getControllerEvidence(): BleConnectionEvidence | undefined {
+    return this.controllerEvidence;
+  }
   private characteristic: WebBluetoothRemoteGATTCharacteristic | null = null;
   private disconnectHandler: (() => void) | null = null;
   // Tail of the serialized write chain. Web Bluetooth rejects a writeValue*
@@ -47,6 +52,17 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
   }
 
   async requestAndConnect(_targetSerial?: string): Promise<BleConnection> {
+    this.controllerEvidence = {
+      scan: {
+        version: 1,
+        scanId: '',
+        source: 'browser_chooser',
+        devices: [],
+        complete: false,
+        droppedCount: 0,
+        capability: 'unsupported',
+      },
+    };
     if (!isWebBluetoothAvailable()) {
       throw new Error('Web Bluetooth is not available in this browser');
     }
@@ -56,6 +72,12 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
     this.cleanupListeners();
 
     const device = await requestWebBluetoothDevice(requestDeviceOptionsForFamily(this.scanFamily));
+    const collector = new BleEvidenceCollector('browser_chooser', 'web');
+    const selected = collector.observe({ deviceId: device.id, cachedName: device.name });
+    selected.advertisementStatus = 'not_observed';
+    const scan = collector.snapshot(device.id, true);
+    scan.capability = 'unsupported';
+    this.controllerEvidence = { scan, selectedDeviceId: device.id };
 
     // Probing the write characteristic opens the GATT connection. If probing
     // rejects (e.g. the UART service is absent on an Aurora variant) or comes
@@ -85,6 +107,7 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
     return {
       deviceId: device.id,
       deviceName: device.name ?? undefined,
+      evidence: this.controllerEvidence,
     };
   }
 

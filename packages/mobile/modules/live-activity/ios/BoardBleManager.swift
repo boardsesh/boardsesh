@@ -21,6 +21,9 @@ struct BoardBleScanResult {
     /// GATT UUIDs (d9b1fad4…/191b6169…/73a2a497…) would surface here if the box
     /// advertises them. `nil`/empty when the packet carries none.
     let serviceData: [String: String]?
+    var localName: String? = nil
+    var cachedName: String? = nil
+    var scanId: String? = nil
 }
 
 /// Connect-time BLE write diagnostics, surfaced to JS (Sentry tags + analytics)
@@ -462,6 +465,70 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // decoy peripheral) or an unknown third controller generation. Clear-on-read
     // via takeLastConnectFailureDiagnostics(). See #3480.
     private var lastConnectFailureDiscoveredServices: [String]?
+    private var evidenceScan: BoardBleEvidenceScan?
+    private var controllerEvidence: [String: Any]?
+    private var controllerEvidenceDeviceId: String?
+    private var controllerEvidenceGeneration: UInt64?
+    private var controllerEvidencePreparationToken: String?
+    private var lastFailureEvidence: (deviceId: String, token: String?, dictionary: [String: Any])?
+
+    func startScanWithEvidence(serviceUuids: [String], scanId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        runOnBleQueue { [weak self] in
+            guard let self else { return }
+            self.startScanOnBleQueue(serviceUuids: serviceUuids, evidenceScanId: scanId, completion: completion)
+        }
+    }
+
+    func scanEvidence(scanId: String, selectedDeviceId: String) -> [String: Any]? {
+        runOnBleQueueSync {
+            guard let scan = evidenceScan, scan.scanId == scanId else { return nil }
+            return scan.dictionary(selectedDeviceId: selectedDeviceId)
+        }
+    }
+
+    /// Called synchronously from the successful prepared-connect completion on
+    /// the BLE queue, before an initial/native re-light can drop the link.
+    /// Return a value snapshot; JavaScript never needs a live-link lookup.
+    func preparedConnectionEvidence(deviceId: String, preparationToken: String) -> [String: Any]? {
+        runOnBleQueueSync {
+            guard controllerEvidenceDeviceId == deviceId,
+                  controllerEvidenceGeneration == connectionGeneration,
+                  // completePendingConnect consumes the active preparation
+                  // before invoking its callback; the completed evidence keeps
+                  // that request's token independently of the live connection.
+                  controllerEvidencePreparationToken == preparationToken,
+                  let snapshot = controllerEvidence else { return nil }
+            return ["deviceId": deviceId, "preparationToken": preparationToken,
+                    "connectionGeneration": connectionGeneration, "controllerEvidence": snapshot]
+        }
+    }
+
+    func takeConnectEvidence(deviceId: String, preparationToken: String) -> [String: Any]? {
+        runOnBleQueueSync {
+            guard let failure = lastFailureEvidence, failure.deviceId == deviceId,
+                  failure.token == preparationToken else { return nil }
+            lastFailureEvidence = nil
+            lastConnectFailureDiscoveredServices = nil
+            return failure.dictionary
+        }
+    }
+
+    private func beginControllerEvidence(deviceId: String, preparationToken: String?) {
+        var snapshot = evidenceScan?.devices[deviceId]?.dictionary ?? ["deviceId": deviceId, "advertisementStatus": "not_observed"]
+        if let observation = evidenceScan?.devices[deviceId], observation.observedAt < (connectRequestedAt ?? .distantFuture) {
+            snapshot["advertisementStatus"] = "cached"
+        }
+        snapshot["version"] = 1
+        snapshot["connectionGeneration"] = connectionGeneration
+        snapshot["discoveredServices"] = [String]()
+        snapshot["discoveryMode"] = "targeted"
+        snapshot["discoveryOutcome"] = "pending"
+        controllerEvidence = snapshot
+        controllerEvidenceDeviceId = deviceId
+        controllerEvidenceGeneration = connectionGeneration
+        controllerEvidencePreparationToken = preparationToken
+    }
+
     private var writeQueue: [WriteRequest] = []
     private var writeGeneration: UInt64 = 0
     private var isWriting = false
@@ -817,13 +884,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// nil. Exposed to JS as `getConnectedDevice` so a foregrounding app can
     /// adopt a connection established while it was backgrounded (widget
     /// reconnect) even if the `connected` event was missed.
-    var connectedDeviceInfo: (deviceId: String, name: String?, configKey: String, diagnostics: BoardBleConnectionDiagnostics)? {
+    var connectedDeviceInfo: (deviceId: String, name: String?, configKey: String, diagnostics: BoardBleConnectionDiagnostics, controllerEvidence: [String: Any]?)? {
         runOnBleQueueSync {
             guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic,
                   hasBinding(for: peripheral.identifier), let association else { return nil }
             let deviceId = peripheral.identifier.uuidString
             let diagnostics = connectionDiagnosticsOnBleQueue(peripheral: peripheral, characteristic: characteristic)
-            return (deviceId, discoveredNames[deviceId] ?? peripheral.name, association.configKey, diagnostics)
+            let evidence = controllerEvidenceDeviceId == deviceId && controllerEvidenceGeneration == connectionGeneration ? controllerEvidence : nil
+            return (deviceId, discoveredNames[deviceId] ?? peripheral.name, association.configKey, diagnostics, evidence)
         }
     }
 
@@ -844,7 +912,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// (read right after a `connect` rejection). See #3480.
     func takeLastConnectFailureDiagnostics() -> [String]? {
         runOnBleQueueSync {
-            defer { lastConnectFailureDiscoveredServices = nil }
+            defer { lastConnectFailureDiscoveredServices = nil; lastFailureEvidence = nil }
             return lastConnectFailureDiscoveredServices
         }
     }
@@ -1181,7 +1249,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         return createdCentralManager.state
     }
 
-    private func startScanOnBleQueue(serviceUuids: [String], completion: @escaping (Result<Void, Error>) -> Void) {
+    private func startScanOnBleQueue(serviceUuids: [String], evidenceScanId: String? = nil, completion: @escaping (Result<Void, Error>) -> Void) {
         // An empty list means "scan unfiltered" (withServices: nil): the JS
         // layer filters results itself so MoonBoard controllers — which don't
         // reliably advertise the UART service UUID — still surface. Older JS
@@ -1189,6 +1257,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let uuids = serviceUuids.compactMap { CBUUID(string: $0) }
         scanServices = uuids
         scanRequested = true
+        evidenceScan = BoardBleEvidenceScan(scanId: evidenceScanId ?? UUID().uuidString)
         emittedScanResults = [:]
 
         // The climber asked to scan, so this is where a phone that has never
@@ -1254,6 +1323,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func stopScanOnBleQueue() {
+        evidenceScan?.finish()
         scanRequested = false
         #if DEBUG || BOARDSESH_TESTS
         if let overrideForTesting = stopScanOverrideForTesting {
@@ -1392,6 +1462,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completePendingConnect(.failure(BoardBleError.superseded))
         connectionGeneration += 1
         let generation = connectionGeneration
+        beginControllerEvidence(deviceId: deviceId, preparationToken: preparationToken)
         intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
         pendingConnectCompletion = completion
         if let preparationToken {
@@ -2119,6 +2190,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 }
                 return mapped
             }
+        evidenceScan?.observe(deviceId: deviceId, localName: localName, cachedName: peripheral.name,
+                              serviceUuids: advertisedServiceUuids, manufacturerData: manufacturerData, serviceData: serviceData)
         // Only cross the bridge when something material changed for this device
         // (first sighting, name arriving in a later scan response, a different
         // advertised UUID set, or manufacturer data first *appearing*). Use a
@@ -2137,7 +2210,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 rssi: RSSI.intValue,
                 serviceUuids: advertisedServiceUuids,
                 manufacturerData: manufacturerData,
-                serviceData: serviceData
+                serviceData: serviceData,
+                localName: localName,
+                cachedName: peripheral.name,
+                scanId: evidenceScan?.scanId
             ))
         }
 
@@ -2609,7 +2685,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // original MoonBoard LED box. If a targeted probe finds neither, iOS may
         // be serving a stale/partial GATT cache — re-read the whole table once
         // before failing (#3480).
+        if controllerEvidenceDeviceId != peripheral.identifier.uuidString || controllerEvidenceGeneration != connectionGeneration {
+            beginControllerEvidence(deviceId: peripheral.identifier.uuidString, preparationToken: connectingPreparation?.token)
+        }
         let discoveredUuids = (peripheral.services ?? []).map { $0.uuid }
+        controllerEvidence?["discoveredServices"] = discoveredUuids.prefix(32).map { Self.normalizedUuidString($0) }
+        controllerEvidence?["discoveredServicesOriginalCount"] = discoveredUuids.count
+        if discoveredUuids.count > 32 { controllerEvidence?["truncated"] = true }
+
         switch serviceDiscoveryDecision(
             discoveredServiceUuids: discoveredUuids,
             hasRetriedFullDiscovery: retriedFullServiceDiscovery.contains(peripheral.identifier)
@@ -2627,6 +2710,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             }
             peripheral.discoverCharacteristics([writeCharacteristicUuid(for: service.uuid)], for: service)
         case .retryFullDiscovery:
+            controllerEvidence?["discoveryMode"] = "full"
             retriedFullServiceDiscovery.insert(peripheral.identifier)
             logger.info("BLE service probe found neither UART nor RedBearLab for \(peripheral.identifier.uuidString, privacy: .public); retrying full GATT discovery")
             peripheral.discoverServices(nil)
@@ -2648,6 +2732,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // getLastConnectDiagnostics right after the connect rejection.
         let discoveredServices = (peripheral.services ?? []).map { $0.uuid.uuidString }
         lastConnectFailureDiscoveredServices = discoveredServices
+        if controllerEvidenceDeviceId == peripheral.identifier.uuidString, controllerEvidenceGeneration == connectionGeneration {
+            controllerEvidence?["discoveryOutcome"] = "failed"
+            lastFailureEvidence = (peripheral.identifier.uuidString, controllerEvidencePreparationToken,
+                                   ["discoveredServices": discoveredServices, "controllerEvidence": controllerEvidence ?? [:]])
+        }
         logger.error("BLE connection setup failed for \(peripheral.identifier.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public) discoveredServices=[\(discoveredServices.joined(separator: ","), privacy: .public)]")
         retriedFullServiceDiscovery.remove(peripheral.identifier)
         peripheralGenerations.removeValue(forKey: peripheral.identifier)
@@ -2715,6 +2804,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             rejectUnboundReadyConnection(peripheral)
             return
         }
+        if controllerEvidenceDeviceId != peripheralId.uuidString || controllerEvidenceGeneration != connectionGeneration {
+            beginControllerEvidence(deviceId: peripheralId.uuidString, preparationToken: connectingPreparation?.token)
+        }
+        controllerEvidence?["discoveryOutcome"] = "complete"
+        controllerEvidence?["writeCharacteristicUuid"] = Self.normalizedUuidString(characteristic.uuid)
+        if let service = characteristic.service { controllerEvidence?["writeServiceUuid"] = Self.normalizedUuidString(service.uuid) }
         connectedPeripheral = peripheral
         writeCharacteristic = characteristic
         // Any successful (re)connect closes a write-stall recovery window (#3181)

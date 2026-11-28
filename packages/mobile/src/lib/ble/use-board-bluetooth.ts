@@ -56,7 +56,15 @@ import type {
   DiscoveredDevice,
 } from './types';
 import type { HoldPlacement } from '../../components/board-renderer/types';
-import { track } from '../analytics';
+import { capture, track } from '../analytics';
+import {
+  bleEvidenceProperties,
+  createBleEvidenceId,
+  nativeControllerEvidence,
+  type BleConnectionEvidence,
+  type BlePickerEvidenceContext,
+} from './controller-evidence';
+import type { NativeBleConnectedDevice } from '../../../modules/live-activity/src/index';
 import { reportHandledError } from '../error-reporting';
 import { clearBleDiagnosticsTags, setBleDiagnosticsTags } from '../sentry';
 import { buildHoldColorOverrideSignature, type HoldColorOverrides } from '../hold-color-overrides';
@@ -302,6 +310,8 @@ export type PickerState = {
   // Kept EMPTY while `searching`: boards only reach the sheet (and the serial
   // lookup behind it) once the list is on screen (#5658).
   devices: DiscoveredDevice[];
+  /** Read at the existing summary flush, scoped to this picker and adapter. */
+  getEvidenceContext?: () => BlePickerEvidenceContext;
   isScanning: boolean;
   handleSelect: (deviceId: string) => void;
   handleCancel: () => void;
@@ -323,6 +333,12 @@ export type PickerState = {
   // The closing sheet's dismissal settled: drop the picker state.
   handleClosed: () => void;
 };
+
+type EvidenceDevicePickerFn = (
+  subscribe: Parameters<DevicePickerFn>[0],
+  targetSearch?: Parameters<DevicePickerFn>[1],
+  getControllerEvidence?: () => BleConnectionEvidence | undefined,
+) => Promise<string>;
 
 // Identity of a board pairing: the silent-reconnect and adoption guards only
 // trust a remembered/native connection while the active board still matches.
@@ -503,6 +519,7 @@ export type BleDisconnectTrigger =
   | 'link_drop';
 
 export type BleConnectionEnded = {
+  controllerEvidence?: BleConnectionEvidence;
   reason: 'user' | 'unexpected';
   disconnectTrigger: BleDisconnectTrigger;
   connectionDurationSec: number;
@@ -561,6 +578,7 @@ type ActiveBleConnectionLifetime = {
   configIdentity: string;
   startedAtMs: number;
   setupComplete: boolean;
+  controllerEvidence?: BleConnectionEvidence;
   attribution: Omit<BleConnectionEnded, 'reason' | 'disconnectTrigger' | 'connectionDurationSec' | 'disconnectInfo'>;
 };
 
@@ -1099,6 +1117,7 @@ export function useBoardBluetooth({
       if (notify) {
         onConnectionEndedRef.current?.({
           ...lifetime.attribution,
+          ...(lifetime.controllerEvidence ? { controllerEvidence: lifetime.controllerEvidence } : {}),
           reason,
           disconnectTrigger,
           connectionDurationSec: Math.max(0, Math.round((Date.now() - lifetime.startedAtMs) / 1000)),
@@ -1144,14 +1163,23 @@ export function useBoardBluetooth({
   // The picker for one connect. With a saved board (`targetSearch`) it opens at
   // the tap in `searching` and moves to `list` or closes itself, as the adapter
   // reports (see RNBleAdapter.requestAndConnect for the state machine, #5658).
-  const devicePicker = useCallback<DevicePickerFn>(
-    (subscribe, targetSearch) => {
+  const devicePicker = useCallback<EvidenceDevicePickerFn>(
+    (subscribe, targetSearch, getControllerEvidence) => {
       return new Promise<string>((resolve, reject) => {
         pickerSessionCounterRef.current += 1;
         const sessionId = pickerSessionCounterRef.current;
         // The picker promise settles exactly once, whoever gets there first: a
         // pick, a cancel, the auto-select, or connect()'s failure path.
         let settled = false;
+        let selectedDeviceId: string | undefined;
+        const getEvidenceContext = (): BlePickerEvidenceContext => {
+          const evidence = getControllerEvidence?.();
+          const selected = selectedDeviceId ?? evidence?.selectedDeviceId;
+          return {
+            capability: evidence?.scan.capability ?? 'unsupported',
+            ...(selected ? { selectedDeviceId: selected } : {}),
+          };
+        };
         let mode: PickerState['mode'] = targetSearch ? 'searching' : 'list';
         const targetUuid = boardUuidOrNull(boardUuid);
         // The box this phone remembers for the board by its BLE id (a MoonBoard
@@ -1198,6 +1226,7 @@ export function useBoardBluetooth({
         const handleSelect = (deviceId: string) => {
           if (settled) return;
           settled = true;
+          selectedDeviceId = deviceId;
           releaseRejectRef();
           // Keep the native sheet mounted through its dismissal, as for an
           // auto-selected board. Tearing it down here can blank the player
@@ -1237,6 +1266,7 @@ export function useBoardBluetooth({
           targetBoard,
           showAllBoards: false,
           devices: [],
+          getEvidenceContext,
           isScanning: true,
           handleSelect,
           handleCancel,
@@ -1926,11 +1956,13 @@ export function useBoardBluetooth({
       // diagnostics (which services the board exposed) for a service_missing
       // report (#3480); `adapter` itself is block-scoped to the try.
       let connectAdapter: BluetoothAdapter | null = null;
+      const connectionAttemptId = createBleEvidenceId();
+      let attemptEvidence: BleConnectionEvidence | undefined;
       // The picker session this connect opened (an adapter opens at most one per
       // requestAndConnect), so the catch below can scope its cleanup to it.
       let connectPickerSessionId: number | null = null;
       const connectDevicePicker: DevicePickerFn = (subscribe, targetSearch) => {
-        const pickerPromise = devicePicker(subscribe, targetSearch);
+        const pickerPromise = devicePicker(subscribe, targetSearch, () => connectAdapter?.getControllerEvidence?.());
         // The picker's executor ran synchronously, so the counter now holds its session.
         connectPickerSessionId ??= pickerSessionCounterRef.current;
         return pickerPromise;
@@ -2031,7 +2063,9 @@ export function useBoardBluetooth({
         // Surface the scan on the session-recording timeline / PostHog. `reconnect`
         // distinguishes a deliberate same-board reconnect (lightbulb — by serial for
         // Aurora, by device id for MoonBoard) from a fresh picker-driven connect.
-        track(SHARED_EVENTS.BluetoothScanStarted, {
+        capture(SHARED_EVENTS.BluetoothScanStarted, {
+          bleEvidenceVersion: 1,
+          bleConnectionAttemptId: connectionAttemptId,
           boardName,
           layoutId,
           sizeId,
@@ -2056,6 +2090,7 @@ export function useBoardBluetooth({
         }
 
         const connection = await adapter.requestAndConnect(reconnectSerial, reconnectDeviceId);
+        attemptEvidence = connection.evidence ?? adapter.getControllerEvidence?.();
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
         configuredDeviceIdRef.current = connection.deviceId;
@@ -2076,6 +2111,7 @@ export function useBoardBluetooth({
           handleDisconnection(adapter, connectionGeneration, info);
         });
         const connectionLifetime = beginConnectionLifetime(adapter, connectionGeneration, connectionIdentity);
+        connectionLifetime.controllerEvidence = attemptEvidence;
         const connectionHandle = createConnectionHandle(
           adapter,
           connectionGeneration,
@@ -2223,7 +2259,9 @@ export function useBoardBluetooth({
           // tags — including onConnectionChange?.(false) without a preceding true,
           // which no consumer reads today but a future one must tolerate.
           connectInitialSendRef.current = null;
-          track(SHARED_EVENTS.BluetoothConnectionFailed, {
+          capture(SHARED_EVENTS.BluetoothConnectionFailed, {
+            ...bleEvidenceProperties(attemptEvidence ?? connectAdapter?.getControllerEvidence?.()),
+            bleConnectionAttemptId: connectionAttemptId,
             boardName,
             layoutId,
             sizeId,
@@ -2282,6 +2320,19 @@ export function useBoardBluetooth({
         if (adapterRef.current !== adapter || activeConnectionLifetimeRef.current !== connectionLifetime) {
           return false;
         }
+        if (
+          connectionDiagnostics?.deviceId === connection.deviceId &&
+          connectionDiagnostics.controllerEvidence?.deviceId === connection.deviceId
+        ) {
+          const nativeEvidence = nativeControllerEvidence(
+            connection.deviceId,
+            connectionDiagnostics.controllerEvidence,
+          );
+          // The generation-checked native record adds discovery diagnostics;
+          // the selected scan remains the immutable record of this attempt.
+          attemptEvidence = { ...nativeEvidence, scan: attemptEvidence?.scan ?? nativeEvidence.scan };
+          connectionLifetime.controllerEvidence = attemptEvidence;
+        }
         setBleDiagnosticsTags(connectionDiagnostics);
         // apiLevel is the level parseApiLevel actually picked; deviceNamePresent
         // records whether an advertised name was even available. parseApiLevel
@@ -2289,7 +2340,9 @@ export function useBoardBluetooth({
         // encoding drops LED positions > 1023 — so a v3 board connecting with no
         // advertised name would light only part of the wall. These two props let
         // us see in PostHog whether that fallback ever fires in the wild.
-        track(SHARED_EVENTS.BluetoothConnectionSuccess, {
+        capture(SHARED_EVENTS.BluetoothConnectionSuccess, {
+          ...bleEvidenceProperties(attemptEvidence ?? connectAdapter?.getControllerEvidence?.()),
+          bleConnectionAttemptId: connectionAttemptId,
           boardName,
           layoutId,
           sizeId,
@@ -2402,13 +2455,17 @@ export function useBoardBluetooth({
         // a dismissal. #3088 tracks distinguishing these sources before using
         // this event as a metric of deliberate user dismissals.
         if (failureCategory === 'user_cancelled') {
-          track(SHARED_EVENTS.BluetoothConnectionCancelled, {
+          capture(SHARED_EVENTS.BluetoothConnectionCancelled, {
+            ...bleEvidenceProperties(attemptEvidence ?? connectAdapter?.getControllerEvidence?.()),
+            bleConnectionAttemptId: connectionAttemptId,
             boardName,
             layoutId,
             sizeId,
           });
         } else {
-          track(SHARED_EVENTS.BluetoothConnectionFailed, {
+          capture(SHARED_EVENTS.BluetoothConnectionFailed, {
+            ...bleEvidenceProperties(attemptEvidence ?? connectAdapter?.getControllerEvidence?.()),
+            bleConnectionAttemptId: connectionAttemptId,
             boardName,
             layoutId,
             sizeId,
@@ -2663,7 +2720,13 @@ export function useBoardBluetooth({
     // adoption takes back despite a deliberate teardown.
     const adoptsBulbReconnect = (connectOrigin: string | undefined) =>
       keptBoardReleaseSettledRef.current && connectOrigin === 'liveActivityIntent';
-    const adopt = (deviceId: string, rawDeviceName?: string, nativeConfigKey?: string, connectOrigin?: string) => {
+    const adopt = (
+      deviceId: string,
+      rawDeviceName?: string,
+      nativeConfigKey?: string,
+      connectOrigin?: string,
+      nativeRecord?: NativeBleConnectedDevice,
+    ) => {
       if (cancelled) return;
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.
@@ -2758,6 +2821,7 @@ export function useBoardBluetooth({
         handleDisconnection(adapter, connectionGeneration, info);
       });
       const connectionLifetime = beginConnectionLifetime(adapter, connectionGeneration, currentConnectionIdentity);
+      connectionLifetime.controllerEvidence = nativeControllerEvidence(deviceId, nativeRecord?.controllerEvidence);
       const connectionHandle = createConnectionHandle(
         adapter,
         connectionGeneration,
@@ -2845,7 +2909,7 @@ export function useBoardBluetooth({
       const reconciliationGeneration = nativeReconciliationGenerationRef.current;
       void getNativeBleConnectedDevice().then((device) => {
         if (cancelled || reconciliationGeneration !== nativeReconciliationGenerationRef.current) return;
-        if (device) adopt(device.deviceId, device.name, device.configKey, device.connectOrigin);
+        if (device) adopt(device.deviceId, device.name, device.configKey, device.connectOrigin, device);
       });
     };
     const connectedSubscription = subscribeNativeBleConnected((payload) => {

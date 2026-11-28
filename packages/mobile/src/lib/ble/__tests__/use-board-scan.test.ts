@@ -55,7 +55,7 @@ vi.mock('../../../../modules/live-activity/src/index', async () => {
 });
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
-vi.mock('../../analytics', () => ({ track: analytics.track }));
+vi.mock('../../analytics', () => ({ track: analytics.track, capture: analytics.track }));
 
 vi.mock('@boardsesh/ble-protocol', () => ({
   // board-device-filter (used by the real, unmocked filter below) reads these
@@ -494,13 +494,16 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
 
     expect(result.current.status).toBe('unavailable');
     expect(result.current.unavailableReason).toBe('powered_off');
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'error',
-      found_count: 0,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'error',
+        found_count: 0,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
 
     act(() => {
       result.current.reset();
@@ -604,13 +607,16 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       vi.advanceTimersByTime(15_000);
     });
 
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'completed',
-      found_count: 2,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'completed',
+        found_count: 2,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
   });
 
   it('reports a scan cut short by picking a board or closing the sheet', async () => {
@@ -628,13 +634,16 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       result.current.reset();
     });
 
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'stopped',
-      found_count: 1,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'stopped',
+        found_count: 1,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
   });
 
   it('reports once per scan: the timeout, then closing the sheet, is one event', async () => {
@@ -663,13 +672,16 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
 
     unmount();
 
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'stopped',
-      found_count: 0,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'stopped',
+        found_count: 0,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
   });
 
   it('reports nothing for a scan that never started the radio', async () => {
@@ -706,13 +718,16 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       vi.advanceTimersByTime(15_000);
     });
 
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'completed',
-      found_count: 0,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'completed',
+        found_count: 0,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
   });
 });
 
@@ -807,13 +822,16 @@ describe('useBoardScan keeps boards with no serial', () => {
     act(() => {
       vi.advanceTimersByTime(15_000);
     });
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'completed',
-      found_count: 1,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'completed',
+        found_count: 1,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
   });
 
   it('lists every board strongest signal first, serial or not', async () => {
@@ -863,13 +881,16 @@ describe('useBoardScan keeps boards with no serial', () => {
     });
 
     // `found_count` stays serials-only so its series is unbroken.
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'completed',
-      found_count: 1,
-      serialless_count: 3,
-      moonboard_count: 2,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'completed',
+        found_count: 1,
+        serialless_count: 3,
+        moonboard_count: 2,
+        trigger: 'picker_tap',
+      }),
+    );
     expect(result.current.status).toBe('done');
   });
 
@@ -882,13 +903,16 @@ describe('useBoardScan keeps boards with no serial', () => {
       result.current.reset();
     });
     expect(result.current.devices).toEqual([]);
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'stopped',
-      found_count: 0,
-      serialless_count: 1,
-      moonboard_count: 1,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'stopped',
+        found_count: 0,
+        serialless_count: 1,
+        moonboard_count: 1,
+        trigger: 'picker_tap',
+      }),
+    );
     analytics.track.mockClear();
 
     await act(async () => {
@@ -897,13 +921,16 @@ describe('useBoardScan keeps boards with no serial', () => {
     act(() => {
       vi.advanceTimersByTime(15_000);
     });
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'completed',
-      found_count: 0,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger: 'picker_tap',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'completed',
+        found_count: 0,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger: 'picker_tap',
+      }),
+    );
   });
 });
 
@@ -1028,13 +1055,16 @@ describe('useBoardScan for the board picker', () => {
       vi.advanceTimersByTime(15_000);
     });
 
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'completed',
-      found_count: 0,
-      serialless_count: 0,
-      moonboard_count: 0,
-      trigger,
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'completed',
+        found_count: 0,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger,
+      }),
+    );
   });
 
   it('claims a free scan slot and gives it back when the scan ends', async () => {
@@ -1093,13 +1123,16 @@ describe('useBoardScan for the board picker', () => {
     expect(currentBleScanOwner()).toBe(restTimerScan);
     expect(result.current.status).toBe('done');
     expect(result.current.devices).toHaveLength(1);
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'preempted',
-      found_count: 0,
-      serialless_count: 1,
-      moonboard_count: 1,
-      trigger: 'picker_auto',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'preempted',
+        found_count: 0,
+        serialless_count: 1,
+        moonboard_count: 1,
+        trigger: 'picker_auto',
+      }),
+    );
 
     // Late advertisements, the old timeout and unmounting touch nothing of the
     // rest timer's.
@@ -1156,13 +1189,16 @@ describe('useBoardScan for the board picker', () => {
     expect(result.current.status).toBe('done');
     expect(result.current.devices).toHaveLength(1);
     expect(currentBleScanOwner()).toBeNull();
-    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
-      outcome: 'stopped',
-      found_count: 0,
-      serialless_count: 1,
-      moonboard_count: 1,
-      trigger: 'picker_auto',
-    });
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Board Quickstart Scan Finished',
+      expect.objectContaining({
+        outcome: 'stopped',
+        found_count: 0,
+        serialless_count: 1,
+        moonboard_count: 1,
+        trigger: 'picker_auto',
+      }),
+    );
     // A late advertisement and the old timeout change nothing.
     act(() => {
       scanCallback()(null, { id: 'moon-2', localName: 'MoonBoard B', rssi: -50 });
